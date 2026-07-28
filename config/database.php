@@ -1,10 +1,23 @@
 <?php
-// Configurações do Banco de Dados
-define('DB_HOST', 'localhost');
-define('DB_USER', 'root');
-define('DB_PASS', '');
-define('DB_NAME', 'lista_supermercados');
+// Carrega variáveis do arquivo .env se ele existir
+if (file_exists(dirname(__DIR__) . '/.env')) {
+    $lines = file(dirname(__DIR__) . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        if (strpos(trim($line), '#') === 0) continue;
+        if (strpos($line, '=') !== false) {
+            list($name, $value) = explode('=', $line, 2);
+            $_ENV[trim($name)] = trim($value);
+        }
+    }
+}
+
+// Configurações do Banco de Dados (com fallback padrão do XAMPP)
+define('DB_HOST', $_ENV['DB_HOST'] ?? 'localhost');
+define('DB_USER', $_ENV['DB_USER'] ?? 'root');
+define('DB_PASS', $_ENV['DB_PASS'] ?? '');
+define('DB_NAME', $_ENV['DB_NAME'] ?? 'lista_supermercados');
 define('DB_CHARSET', 'utf8mb4');
+
 
 class Database {
     private static $instance = null;
