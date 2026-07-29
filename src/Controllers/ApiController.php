@@ -274,4 +274,21 @@ class ApiController extends BaseController {
         
         $this->json(['success' => true, 'optimization' => $opt]);
     }
+
+    /**
+     * Atualiza a preferência da marca via AJAX
+     */
+    public function updateBrandPreferenceAjax() {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $brandId = isset($input['brand_id']) ? (int)$input['brand_id'] : 0;
+        $preference = isset($input['preference']) ? (int)$input['preference'] : 3;
+
+        if ($brandId <= 0 || $preference < 1 || $preference > 5) {
+            $this->json(['success' => false, 'error' => 'Dados inválidos.'], 400);
+        }
+
+        $this->productRepo->updateBrandPreference($brandId, $preference);
+        
+        $this->json(['success' => true]);
+    }
 }

@@ -3,14 +3,19 @@ namespace App\Services;
 
 use App\Repositories\ShoppingListRepository;
 use App\Repositories\MarketRepository;
+use App\Repositories\ProductRepository;
 
 class OptimizationService {
     private $listRepository;
     private $marketRepository;
+    private $productRepository;
+    private $normalizationService;
 
     public function __construct() {
         $this->listRepository = new ShoppingListRepository();
         $this->marketRepository = new MarketRepository();
+        $this->productRepository = new ProductRepository();
+        $this->normalizationService = new NormalizationService();
     }
 
     public function optimizeList($listId) {
@@ -18,14 +23,35 @@ class OptimizationService {
         if (!$list) return null;
 
         $items = $this->listRepository->getItems($listId);
-        $prices = $this->listRepository->getPricesForListProducts($listId);
-        $markets = $this->marketRepository->all(true); // Apenas ativos
+        
+        // Carrega todos os produtos ativos e suas marcas
+        $allProducts = $this->productRepository->all();
+        
+        // Mapeia marcas e suas preferências (1 a 5)
+        $brands = $this->productRepository->getBrands();
+        $brandPreferences = [];
+        foreach ($brands as $b) {
+            $brandPreferences[$b['id']] = isset($b['preference']) ? intval($b['preference']) : 3;
+        }
 
+        // Agrupa os produtos da base por nome sem marca (base description) e volume físico
+        $genericMap = [];
+        foreach ($allProducts as $p) {
+            $baseDesc = $this->normalizationService->getBaseDescription($p['name']);
+            $volObj = $this->normalizationService->extractVolume($p['name']);
+            $volStr = $volObj ? $volObj['normalized'] : 'geral';
+            
+            $genericMap[$baseDesc][$volStr][] = $p;
+        }
+
+        // Carrega todos os preços mais recentes coletados
+        $rawPrices = $this->productRepository->getAllLatestPrices();
+        
         // Mapeia preços em matriz indexada [product_id][market_id]
         $priceMatrix = [];
         $avgPrices = []; // Armazena média do preço de cada produto para fallback se necessário
         
-        foreach ($prices as $p) {
+        foreach ($rawPrices as $p) {
             $priceMatrix[$p['product_id']][$p['market_id']] = [
                 'price' => floatval($p['price']),
                 'is_promotion' => $p['is_promotion'],
@@ -40,8 +66,10 @@ class OptimizationService {
 
         // Calcula a média real para cada produto
         foreach ($avgPrices as $prodId => $vals) {
-            $avgPrices[$prodId] = count($vals) > 0 ? array_sum($vals) / count($vals) : 0;
+            $avgPrices[$prodId] = count($vals) > 0 ? array_sum($vals) / count($vals) : 0.0;
         }
+
+        $markets = $this->marketRepository->all(true); // Apenas ativos
 
         // --- 1. COMPARAÇÃO POR MERCADO ÚNICO (Comprar tudo em um só lugar) ---
         $singleMarketSummary = [];
@@ -54,42 +82,82 @@ class OptimizationService {
             $itemsDetail = [];
 
             foreach ($items as $item) {
-                $prodId = $item['product_id'];
                 $qty = floatval($item['quantity']);
                 
-                if (isset($priceMatrix[$prodId][$marketId])) {
-                    $itemPrice = $priceMatrix[$prodId][$marketId]['price'];
-                    $itemCost = $qty * $itemPrice;
+                // Obtém alternativas de marcas do produto correspondente
+                $origProduct = $this->productRepository->findById($item['product_id']);
+                $baseDesc = $this->normalizationService->getBaseDescription($item['product_name']);
+                $volObj = $this->normalizationService->extractVolume($item['product_name']);
+                $volStr = $volObj ? $volObj['normalized'] : 'geral';
+                
+                $candidates = $genericMap[$baseDesc][$volStr] ?? [$origProduct];
+                
+                // Encontra a melhor opção de marca com base no menor preço percebido (Ponderado por gosto da marca)
+                $bestProductOption = null;
+                $bestPerceivedPrice = null;
+                $bestActualPrice = null;
+                
+                foreach ($candidates as $cand) {
+                    $candId = $cand['id'];
+                    
+                    if (isset($priceMatrix[$candId][$marketId])) {
+                        $actualPrice = $priceMatrix[$candId][$marketId]['price'];
+                        
+                        // Fator de Ajuste de Preferência:
+                        // Nota 5: 20% desconto no preço percebido
+                        // Nota 4: 10% desconto
+                        // Nota 3: Preço original (neutro)
+                        // Nota 2: 10% de acréscimo
+                        // Nota 1: 20% de acréscimo
+                        $prefScore = $brandPreferences[$cand['brand_id']] ?? 3;
+                        $perceivedPrice = $actualPrice * (1 + (3 - $prefScore) * 0.10);
+                        
+                        if ($bestPerceivedPrice === null || $perceivedPrice < $bestPerceivedPrice) {
+                            $bestPerceivedPrice = $perceivedPrice;
+                            $bestActualPrice = $actualPrice;
+                            $bestProductOption = $cand;
+                        }
+                    }
+                }
+
+                // Se encontrou alguma marca alternativa disponível com preço neste mercado
+                if ($bestProductOption !== null) {
+                    $prodId = $bestProductOption['id'];
+                    $itemCost = $qty * $bestActualPrice;
                     $totalCost += $itemCost;
                     $itemsFound++;
                     
                     $itemsDetail[] = [
                         'product_id' => $prodId,
-                        'product_name' => $item['product_name'],
+                        'product_name' => $bestProductOption['name'], // Mostra o nome da marca escolhida
+                        'brand_name' => $bestProductOption['brand_name'] ?? 'Sem Marca',
+                        'preference_score' => $brandPreferences[$bestProductOption['brand_id']] ?? 3,
                         'quantity' => $qty,
-                        'unit_price' => $itemPrice,
+                        'unit_price' => $bestActualPrice,
                         'total_price' => $itemCost,
                         'is_promotion' => $priceMatrix[$prodId][$marketId]['is_promotion'],
                         'discount_percentage' => $priceMatrix[$prodId][$marketId]['discount_percentage'],
                         'estimated' => false
                     ];
                 } else {
-                    // Produto sem preço nesse mercado. Para não inviabilizar a comparação,
-                    // estimamos pelo preço médio do produto nos outros mercados.
-                    $estimatedPrice = $avgPrices[$prodId] ?? 0.0;
+                    // Produto sem preço. Estima usando a média de preços da marca original
+                    $origId = $item['product_id'];
+                    $estimatedPrice = $avgPrices[$origId] ?? 0.0;
                     $itemCost = $qty * $estimatedPrice;
                     $totalCost += $itemCost;
                     $itemsMissing++;
                     
                     $itemsDetail[] = [
-                        'product_id' => $prodId,
+                        'product_id' => $origId,
                         'product_name' => $item['product_name'],
+                        'brand_name' => $item['brand_name'] ?? 'Sem Marca',
+                        'preference_score' => $brandPreferences[$origProduct['brand_id'] ?? 0] ?? 3,
                         'quantity' => $qty,
                         'unit_price' => $estimatedPrice,
                         'total_price' => $itemCost,
                         'is_promotion' => 0,
                         'discount_percentage' => 0,
-                        'estimated' => true // Marca que é um preço estimado
+                        'estimated' => true
                     ];
                 }
             }
@@ -113,81 +181,102 @@ class OptimizationService {
             return $a['total_cost'] <=> $b['total_cost'];
         });
 
-        // --- 2. COMPARAÇÃO DIVIDIDA (Melhor preço de cada item) ---
+        // --- 2. COMPARAÇÃO DIVIDIDA (Melhor preço e marca para cada item) ---
         $splitItems = [];
         $splitTotalCost = 0.0;
         $splitByMarket = []; // Agrupado por mercado para o roteiro
 
         foreach ($items as $item) {
-            $prodId = $item['product_id'];
             $qty = floatval($item['quantity']);
             
-            $cheapestPrice = null;
-            $cheapestMarketId = null;
-            $cheapestMarketName = 'Indefinido';
-            $cheapestLogo = '';
+            $origProduct = $this->productRepository->findById($item['product_id']);
+            $baseDesc = $this->normalizationService->getBaseDescription($item['product_name']);
+            $volObj = $this->normalizationService->extractVolume($item['product_name']);
+            $volStr = $volObj ? $volObj['normalized'] : 'geral';
+            
+            // Alternativas de marca
+            $candidates = $genericMap[$baseDesc][$volStr] ?? [$origProduct];
+            
+            $bestCandidate = null;
+            $bestMarketId = null;
+            $bestMarketName = 'Indefinido';
+            $bestLogo = '';
+            $bestPerceivedPrice = null;
+            $bestActualPrice = null;
             $isPromo = 0;
             $disc = 0.0;
 
-            // Encontra qual mercado tem o menor preço para este produto
-            if (isset($priceMatrix[$prodId])) {
-                foreach ($priceMatrix[$prodId] as $mId => $pData) {
-                    if ($cheapestPrice === null || $pData['price'] < $cheapestPrice) {
-                        $cheapestPrice = $pData['price'];
-                        $cheapestMarketId = $mId;
-                        $isPromo = $pData['is_promotion'];
-                        $disc = $pData['discount_percentage'];
+            // Varre candidatos a substituto em todos os mercados ativos
+            foreach ($candidates as $cand) {
+                $candId = $cand['id'];
+                
+                if (isset($priceMatrix[$candId])) {
+                    foreach ($priceMatrix[$candId] as $mId => $pData) {
+                        $actualPrice = $pData['price'];
+                        $prefScore = $brandPreferences[$cand['brand_id']] ?? 3;
+                        $perceivedPrice = $actualPrice * (1 + (3 - $prefScore) * 0.10);
+                        
+                        if ($bestPerceivedPrice === null || $perceivedPrice < $bestPerceivedPrice) {
+                            $bestPerceivedPrice = $perceivedPrice;
+                            $bestActualPrice = $actualPrice;
+                            $bestCandidate = $cand;
+                            $bestMarketId = $mId;
+                            $isPromo = $pData['is_promotion'];
+                            $disc = $pData['discount_percentage'];
+                        }
                     }
                 }
             }
 
-            // Encontra nome do mercado mais barato
-            if ($cheapestMarketId) {
+            // Encontra nome do mercado correspondente
+            if ($bestMarketId) {
                 foreach ($markets as $m) {
-                    if ($m['id'] == $cheapestMarketId) {
-                        $cheapestMarketName = $m['name'];
-                        $cheapestLogo = $m['logo_url'];
+                    if ($m['id'] == $bestMarketId) {
+                        $bestMarketName = $m['name'];
+                        $bestLogo = $m['logo_url'];
                         break;
                     }
                 }
             }
 
-            $unitPrice = $cheapestPrice !== null ? $cheapestPrice : ($avgPrices[$prodId] ?? 0.0);
+            $unitPrice = $bestActualPrice !== null ? $bestActualPrice : ($avgPrices[$item['product_id']] ?? 0.0);
             $totalPrice = $qty * $unitPrice;
             $splitTotalCost += $totalPrice;
 
             $itemDetail = [
-                'product_id' => $prodId,
-                'product_name' => $item['product_name'],
+                'product_id' => $bestCandidate ? $bestCandidate['id'] : $item['product_id'],
+                'product_name' => $bestCandidate ? $bestCandidate['name'] : $item['product_name'],
+                'brand_name' => $bestCandidate ? ($bestCandidate['brand_name'] ?? 'Sem Marca') : ($item['brand_name'] ?? 'Sem Marca'),
+                'preference_score' => $bestCandidate ? ($brandPreferences[$bestCandidate['brand_id']] ?? 3) : 3,
                 'quantity' => $qty,
                 'unit_price' => $unitPrice,
                 'total_price' => $totalPrice,
-                'market_id' => $cheapestMarketId,
-                'market_name' => $cheapestMarketName,
-                'market_logo' => $cheapestLogo,
+                'market_id' => $bestMarketId,
+                'market_name' => $bestMarketName,
+                'market_logo' => $bestLogo,
                 'is_promotion' => $isPromo,
                 'discount_percentage' => $disc,
-                'estimated' => ($cheapestPrice === null)
+                'estimated' => ($bestActualPrice === null)
             ];
 
             $splitItems[] = $itemDetail;
 
             // Agrupa no roteiro por mercado
-            if ($cheapestMarketId) {
-                if (!isset($splitByMarket[$cheapestMarketId])) {
-                    $splitByMarket[$cheapestMarketId] = [
-                        'market_name' => $cheapestMarketName,
-                        'market_logo' => $cheapestLogo,
+            if ($bestMarketId) {
+                if (!isset($splitByMarket[$bestMarketId])) {
+                    $splitByMarket[$bestMarketId] = [
+                        'market_name' => $bestMarketName,
+                        'market_logo' => $bestLogo,
                         'total_cost' => 0.0,
                         'items' => []
                     ];
                 }
-                $splitByMarket[$cheapestMarketId]['items'][] = $itemDetail;
-                $splitByMarket[$cheapestMarketId]['total_cost'] += $totalPrice;
+                $splitByMarket[$bestMarketId]['items'][] = $itemDetail;
+                $splitByMarket[$bestMarketId]['total_cost'] += $totalPrice;
             }
         }
 
-        // Calcula economia
+        // Calcula economias
         $cheapestSingleMarketCost = !empty($singleMarketSummary) ? $singleMarketSummary[0]['total_cost'] : 0.0;
         $mostExpensiveSingleMarketCost = !empty($singleMarketSummary) ? end($singleMarketSummary)['total_cost'] : 0.0;
         

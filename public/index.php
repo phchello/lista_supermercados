@@ -81,6 +81,7 @@ $routes = [
     'api/lists/add-item' => ['App\Controllers\ApiController', 'addListItemAjax'],
     'api/lists/remove-item' => ['App\Controllers\ApiController', 'removeListItemAjax'],
     'api/lists/update-quantity' => ['App\Controllers\ApiController', 'updateListItemQuantityAjax'],
+    'api/brands/update-preference' => ['App\Controllers\ApiController', 'updateBrandPreferenceAjax'],
 ];
 
 // Despacha para o Controller correspondente

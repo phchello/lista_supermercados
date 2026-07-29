@@ -6,6 +6,7 @@ use App\Repositories\ProductRepository;
 use App\Repositories\MarketRepository;
 use App\Services\OptimizationService;
 use App\Services\ExportService;
+use App\Services\NormalizationService;
 
 class ShoppingListController extends BaseController {
     private $listRepo;
@@ -40,8 +41,40 @@ class ShoppingListController extends BaseController {
 
         // Obtém otimização e comparação
         $optimization = $this->optimizationService->optimizeList($id);
-        $allProducts = $this->productRepo->all(); // Para preenchimento no autocomplete
+        $allProducts = $this->productRepo->all();
         $markets = $this->marketRepo->all(true);
+        $brands = $this->productRepo->getBrands();
+
+        // Agrupa os produtos fisicamente sem marcas na interface
+        $normalizationService = new NormalizationService();
+        $genericProducts = [];
+        foreach ($allProducts as $p) {
+            $baseDesc = $normalizationService->getBaseDescription($p['name']);
+            $volObj = $normalizationService->extractVolume($p['name']);
+            $volStr = $volObj ? $volObj['normalized'] : '';
+            
+            $genericName = ucwords($baseDesc);
+            if ($volStr) {
+                $genericName .= ' ' . strtoupper($volStr);
+            }
+            
+            $key = md5(strtolower($genericName));
+            if (!isset($genericProducts[$key])) {
+                $genericProducts[$key] = [
+                    'id' => $p['id'],
+                    'name' => $genericName,
+                    'category_name' => $p['category_name'],
+                    'brands' => $p['brand_name'] ? [$p['brand_name']] : [],
+                    'product_ids' => [$p['id']]
+                ];
+            } else {
+                if ($p['brand_name'] && !in_array($p['brand_name'], $genericProducts[$key]['brands'])) {
+                    $genericProducts[$key]['brands'][] = $p['brand_name'];
+                }
+                $genericProducts[$key]['product_ids'][] = $p['id'];
+            }
+        }
+        $genericProducts = array_values($genericProducts);
 
         // Exportação de Relatórios
         if (isset($_GET['export'])) {
@@ -77,7 +110,8 @@ class ShoppingListController extends BaseController {
             'title' => 'Lista: ' . $list['name'],
             'list' => $list,
             'optimization' => $optimization,
-            'allProducts' => $allProducts,
+            'allProducts' => $genericProducts, // Passa agrupados por genéricos!
+            'brands' => $brands, // Passa marcas
             'markets' => $markets
         ]);
     }

@@ -2,11 +2,15 @@
     <div class="mb-3 mb-md-0">
         <a href="?route=lists" class="btn btn-sm btn-outline-secondary btn-modern mb-3"><i class="bi bi-arrow-left"></i> Voltar para Listas</a>
         <h3 class="fw-bold mb-1"><?= htmlspecialchars($list['name']) ?></h3>
-        <p class="text-muted mb-0">Monte sua lista e compare onde é mais barato em tempo real.</p>
+        <p class="text-muted mb-0">Selecione itens genéricos e deixe o sistema escolher a melhor marca por preço e seu gosto.</p>
     </div>
     
     <!-- Ações de Relatório e Conclusão -->
     <div class="d-flex flex-wrap gap-2" id="listActionHeader">
+        <button type="button" class="btn btn-outline-primary btn-modern" data-bs-toggle="modal" data-bs-target="#brandPreferencesModal">
+            <i class="bi bi-star-fill me-1 text-warning"></i> Gosto por Marcas
+        </button>
+
         <div class="dropdown">
             <button class="btn btn-outline-secondary btn-modern dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                 <i class="bi bi-download me-1"></i> Exportar Relatório
@@ -35,7 +39,7 @@
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
                     <input type="text" id="ajaxProductSearch" class="form-control" placeholder="Digite para buscar produtos...">
                 </div>
-                <div class="form-text">Digite para filtrar a lista. Deixe vazio para ver exemplos comuns.</div>
+                <div class="form-text">Busque produtos comuns (ex: arroz, leite) para marcar.</div>
             </div>
 
             <!-- Container da Lista de Seleção de Produtos -->
@@ -132,6 +136,42 @@
     </div>
 </div>
 
+<!-- Modal: Preferências de Marcas -->
+<div class="modal fade" id="brandPreferencesModal" tabindex="-1" aria-labelledby="brandPreferencesModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="brandPreferencesModalLabel">
+                    <i class="bi bi-star-fill text-warning me-1"></i> O quanto você gosta de cada marca?
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">
+                    Defina sua preferência para cada marca. O otimizador prioriza as marcas que você gosta mais e evita as marcas que você gosta menos, mesmo que haja pequenas variações de preço.
+                </p>
+                <div class="list-group list-group-flush">
+                    <?php foreach ($brands as $b): ?>
+                        <div class="list-group-item bg-transparent d-flex justify-content-between align-items-center px-0 py-2 border-color-style">
+                            <span class="fw-semibold text-main"><?= htmlspecialchars($b['name']) ?></span>
+                            <select class="form-select form-select-sm brand-pref-select" style="width: 150px;" data-brand-id="<?= $b['id'] ?>">
+                                <option value="5" <?= ($b['preference'] == 5) ? 'selected' : '' ?>>⭐⭐⭐⭐⭐ Adoro</option>
+                                <option value="4" <?= ($b['preference'] == 4) ? 'selected' : '' ?>>⭐⭐⭐⭐ Gosto</option>
+                                <option value="3" <?= ($b['preference'] == 3) ? 'selected' : '' ?>>⭐⭐⭐ Neutro</option>
+                                <option value="2" <?= ($b['preference'] == 2) ? 'selected' : '' ?>>⭐⭐ Não Gosto</option>
+                                <option value="1" <?= ($b['preference'] == 1) ? 'selected' : '' ?>>⭐ Evito</option>
+                            </select>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary btn-modern" data-bs-dismiss="modal">Confirmar e Recalcular</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Modal: Registrar / Concluir Compra -->
 <div class="modal fade" id="savePurchaseModal" tabindex="-1" aria-labelledby="savePurchaseModalLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -189,7 +229,7 @@
 document.addEventListener('DOMContentLoaded', function () {
     const listId = <?= $list['id'] ?>;
     
-    // Todos os produtos da base carregados na memória para busca instantânea e offline
+    // Todos os produtos genéricos da base (sem marca) carregados na memória
     const dbProducts = <?= json_encode($allProducts) ?>;
     
     // Estado da Lista de Compras Atual (Itens Adicionados)
@@ -213,6 +253,30 @@ document.addEventListener('DOMContentLoaded', function () {
     // Evento de Digitação (Busca em Tempo Real na memória)
     searchInput.addEventListener('input', function () {
         renderProductSelector();
+    });
+
+    // Escuta alteração nas preferências de marca
+    document.querySelectorAll('.brand-pref-select').forEach(select => {
+        select.addEventListener('change', function () {
+            const brandId = this.dataset.brandId;
+            const preference = this.value;
+            
+            fetch('?route=api/brands/update-preference', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    brand_id: brandId,
+                    preference: preference
+                })
+            })
+            .then(res => res.json())
+            .then(res => {
+                if (res.success) {
+                    // Recarrega itens para re-otimizar os cálculos com a nova preferência
+                    fetchListItems();
+                }
+            });
+        });
     });
 
     // Busca itens atuais da lista
@@ -252,16 +316,15 @@ document.addEventListener('DOMContentLoaded', function () {
         let filtered = [];
 
         if (query === '') {
-            // Se a busca estiver vazia, exibe 15 produtos de exemplos
+            // Se a busca estiver vazia, exibe 15 produtos genéricos de exemplos
             filtered = dbProducts.slice(0, 15);
         } else {
             // Caso contrário, filtra na memória
             filtered = dbProducts.filter(p => 
                 p.name.toLowerCase().includes(query) || 
-                (p.brand_name && p.brand_name.toLowerCase().includes(query)) ||
                 (p.category_name && p.category_name.toLowerCase().includes(query)) ||
-                (p.ean && p.ean.includes(query))
-            ).slice(0, 30); // Limita em 30 resultados para não travar a tela
+                (p.brands && p.brands.some(b => b && b.toLowerCase().includes(query)))
+            ).slice(0, 30);
         }
 
         selectorContainer.innerHTML = '';
@@ -277,19 +340,25 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         filtered.forEach(product => {
-            // Verifica se o produto já está adicionado na lista
-            const addedItem = currentListItems.find(item => item.product_id == product.id);
+            // Verifica se este produto genérico (qualquer um dos IDs de marca associados) já está na lista
+            const addedItem = currentListItems.find(item => product.product_ids.includes(parseInt(item.product_id)));
             const isAdded = !!addedItem;
             const currentQty = addedItem ? parseFloat(addedItem.quantity) : 1.0;
 
             const div = document.createElement('div');
             div.className = `p-3 border rounded-3 mb-2 d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2 ${isAdded ? 'bg-primary-subtle border-primary-subtle' : 'bg-body-tertiary'}`;
             
+            // Lista as marcas compatíveis
+            const brandsList = product.brands.length > 0 ? product.brands.join(', ') : 'Marcas diversas';
+
             div.innerHTML = `
                 <div>
                     <h6 class="fw-bold mb-0 text-main">${product.name}</h6>
-                    <span class="text-muted small" style="font-size: 0.75rem;">
-                        ${product.brand_name || 'Sem Marca'} | ${product.category_name || 'Sem Categoria'}
+                    <span class="text-muted small d-block mb-1" style="font-size: 0.75rem; line-height: 1.1;">
+                        Marcas compatíveis: <strong>${brandsList}</strong>
+                    </span>
+                    <span class="badge bg-secondary-subtle text-secondary-emphasis" style="font-size: 0.65rem;">
+                        ${product.category_name || 'Sem Categoria'}
                     </span>
                 </div>
                 <div class="d-flex align-items-center gap-2 justify-content-end">
@@ -302,11 +371,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     <!-- Botão de Ação -->
                     ${isAdded ? 
-                        `<button class="btn btn-sm btn-danger btn-remove-item" data-id="${product.id}">
-                            <i class="bi bi-dash-circle"></i> Remover
+                        `<button class="btn btn-sm btn-danger btn-remove-item" data-id="${addedItem.product_id}">
+                            <i class="bi text-main bi-dash-circle"></i> Remover
                          </button>` : 
                         `<button class="btn btn-sm btn-primary btn-add-item" data-id="${product.id}">
-                            <i class="bi bi-plus-circle"></i> Adicionar
+                            <i class="bi text-main bi-plus-circle"></i> Adicionar
                          </button>`
                     }
                 </div>
@@ -319,7 +388,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 let val = Math.max(0.1, parseFloat(qtyInput.value) - 1.0);
                 qtyInput.value = val.toFixed(1);
                 if (isAdded) {
-                    updateItemQuantity(product.id, val);
+                    updateItemQuantity(addedItem.product_id, val);
                 }
             });
 
@@ -327,7 +396,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 let val = parseFloat(qtyInput.value) + 1.0;
                 qtyInput.value = val.toFixed(1);
                 if (isAdded) {
-                    updateItemQuantity(product.id, val);
+                    updateItemQuantity(addedItem.product_id, val);
                 }
             });
 
@@ -335,7 +404,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 let val = Math.max(0.1, parseFloat(qtyInput.value) || 1.0);
                 qtyInput.value = val.toFixed(1);
                 if (isAdded) {
-                    updateItemQuantity(product.id, val);
+                    updateItemQuantity(addedItem.product_id, val);
                 }
             });
 
@@ -351,7 +420,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const removeBtn = div.querySelector('.btn-remove-item');
             if (removeBtn) {
                 removeBtn.addEventListener('click', () => {
-                    removeItem(product.id);
+                    removeItem(addedItem.product_id);
                 });
             }
 
@@ -373,12 +442,16 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         currentListItems.forEach(item => {
+            // Encontra o produto genérico correspondente para mostrar o nome genérico limpo
+            const genProduct = dbProducts.find(p => p.product_ids.includes(parseInt(item.product_id)));
+            const displayName = genProduct ? genProduct.name : item.product_name;
+
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>
-                    <div class="fw-bold">${item.product_name}</div>
+                    <div class="fw-bold">${displayName}</div>
                     <span class="text-muted small" style="font-size: 0.75rem;">
-                        ${item.brand_name || 'Sem Marca'} | ${item.category_name || 'Sem Categoria'}
+                        ${item.category_name || 'Sem Categoria'}
                     </span>
                 </td>
                 <td class="text-center">
@@ -471,12 +544,18 @@ document.addEventListener('DOMContentLoaded', function () {
             
             let detailsRows = '';
             mc.items_detail.forEach(det => {
+                // Desenha estrelas da nota da marca
+                const stars = '⭐'.repeat(det.preference_score || 3);
+                
                 detailsRows += `
                     <tr>
                         <td class="ps-3">
-                            ${det.product_name}
-                            ${det.estimated ? '<span class="text-warning font-monospace" style="font-size: 0.7rem;">(estimado)</span>' : ''}
-                            ${det.is_promotion ? '<span class="badge bg-danger p-1" style="font-size: 0.65rem;">PROMO</span>' : ''}
+                            <div class="fw-semibold">${det.product_name}</div>
+                            <span class="text-muted small d-block" style="font-size:0.7rem;">
+                                Marca: ${det.brand_name} (${stars})
+                                ${det.estimated ? '<span class="text-warning font-monospace">(estimado)</span>' : ''}
+                                ${det.is_promotion ? '<span class="badge bg-danger p-1 ms-1" style="font-size: 0.6rem;">PROMO</span>' : ''}
+                            </span>
                         </td>
                         <td>${parseFloat(det.quantity).toLocaleString('pt-BR')}</td>
                         <td>R$ ${parseFloat(det.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -499,7 +578,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         <table class="table table-sm table-striped mb-0 text-muted" style="font-size: 0.85rem;">
                             <thead>
                                 <tr class="table-light">
-                                    <th class="ps-3">Produto</th>
+                                    <th class="ps-3">Produto Selecionado</th>
                                     <th>Qtd</th>
                                     <th>Preço Unitário</th>
                                     <th class="pe-3 text-end">Total</th>
@@ -532,7 +611,7 @@ document.addEventListener('DOMContentLoaded', function () {
         
         // Renderiza card de resumo superior
         splitSummaryCard.innerHTML = `
-            <h6 class="text-uppercase fw-semibold mb-1" style="font-size: 0.75rem;">Custo Dividindo por Menor Preço</h6>
+            <h6 class="text-uppercase fw-semibold mb-1" style="font-size: 0.75rem;">Custo Dividindo por Menor Preço (Ajustado por Gosto)</h6>
             <h2 class="fw-bold mb-1">R$ ${parseFloat(split.total_cost).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h2>
             ${split.potential_savings_vs_cheapest > 0 ? 
                 `<div class="fs-6 fw-semibold">
@@ -559,15 +638,20 @@ document.addEventListener('DOMContentLoaded', function () {
             
             let listItemsHtml = '';
             mGroup.items.forEach(item => {
+                const stars = '⭐'.repeat(item.preference_score || 3);
+                
                 listItemsHtml += `
-                    <li class="list-group-item bg-transparent py-2 px-0 d-flex justify-content-between text-muted">
-                        <span>
+                    <li class="list-group-item bg-transparent py-2 px-0 d-flex justify-content-between align-items-center text-muted">
+                        <div>
                             <strong>${parseFloat(item.quantity).toLocaleString('pt-BR')}x</strong> ${item.product_name}
-                            ${item.is_promotion ? '<span class="badge bg-danger p-1 ms-1" style="font-size: 0.65rem;">PROMO</span>' : ''}
-                        </span>
-                        <span>
+                            <div class="small text-muted" style="font-size: 0.75rem;">
+                                Marca: ${item.brand_name} (${stars})
+                                ${item.is_promotion ? '<span class="badge bg-danger p-1 ms-1" style="font-size: 0.6rem;">PROMO</span>' : ''}
+                            </div>
+                        </div>
+                        <span class="text-end">
                             R$ ${parseFloat(item.total_price).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 
-                            <span class="small" style="font-size: 0.75rem;">(R$ ${parseFloat(item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} un)</span>
+                            <div class="small" style="font-size: 0.7rem;">(R$ ${parseFloat(item.unit_price).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} un)</div>
                         </span>
                     </li>
                 `;

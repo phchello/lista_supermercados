@@ -179,6 +179,11 @@ class ProductRepository {
         return $this->db->query("SELECT * FROM brands ORDER BY name ASC")->fetchAll();
     }
 
+    public function updateBrandPreference($brandId, $preference) {
+        $stmt = $this->db->prepare("UPDATE brands SET preference = ? WHERE id = ?");
+        return $stmt->execute([$preference, $brandId]);
+    }
+
     public function findOrCreateBrand($name) {
         $name = trim($name);
         if (empty($name)) return null;
@@ -241,6 +246,22 @@ class ProductRepository {
         $stmt = $this->db->prepare($sql);
         $stmt->execute([$productId, $productId]);
         return $stmt->fetchAll();
+    }
+
+    // Preços mais recentes de todos os produtos ativos nos mercados
+    public function getAllLatestPrices() {
+        $sql = "
+            SELECT ph.product_id, ph.market_id, ph.price, ph.is_promotion, ph.discount_percentage, ph.collected_at
+            FROM price_history ph
+            JOIN markets m ON ph.market_id = m.id
+            WHERE m.active = 1
+              AND ph.collected_at = (
+                  SELECT MAX(ph2.collected_at)
+                  FROM price_history ph2
+                  WHERE ph2.product_id = ph.product_id AND ph2.market_id = ph.market_id
+              )
+        ";
+        return $this->db->query($sql)->fetchAll();
     }
 
     // Histórico de preços
