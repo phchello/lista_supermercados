@@ -257,3 +257,15 @@ body {
         box-shadow: none !important;
     }
 }
+
+/* Scrollbar para o seletor de produtos */
+.product-selector-list::-webkit-scrollbar {
+    width: 6px;
+}
+.product-selector-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+.product-selector-list::-webkit-scrollbar-thumb {
+    background-color: var(--border-color);
+    border-radius: 10px;
+}

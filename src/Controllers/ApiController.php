@@ -4,22 +4,28 @@ namespace App\Controllers;
 use App\Repositories\ProductRepository;
 use App\Repositories\PriceHistoryRepository;
 use App\Repositories\MarketRepository;
+use App\Repositories\ShoppingListRepository;
 use App\Services\OcrService;
 use App\Services\NormalizationService;
+use App\Services\OptimizationService;
 
 class ApiController extends BaseController {
     private $productRepo;
     private $priceRepo;
     private $marketRepo;
+    private $listRepo;
     private $ocrService;
     private $normalizationService;
+    private $optimizationService;
 
     public function __construct() {
         $this->productRepo = new ProductRepository();
         $this->priceRepo = new PriceHistoryRepository();
         $this->marketRepo = new MarketRepository();
+        $this->listRepo = new ShoppingListRepository();
         $this->ocrService = new OcrService();
         $this->normalizationService = new NormalizationService();
+        $this->optimizationService = new OptimizationService();
     }
 
     /**
@@ -197,5 +203,75 @@ class ApiController extends BaseController {
             'success' => true,
             'message' => "Importação concluída. {$savedCount} preços registrados com sucesso."
         ]);
+    }
+
+    /**
+     * Retorna itens da lista e seu comparativo de preços via AJAX
+     */
+    public function getListItemsAjax() {
+        $listId = isset($_GET['list_id']) ? (int)$_GET['list_id'] : 0;
+        if ($listId <= 0) {
+            $this->json(['success' => false, 'error' => 'Lista inválida.'], 400);
+        }
+
+        $opt = $this->optimizationService->optimizeList($listId);
+        $this->json(['success' => true, 'optimization' => $opt]);
+    }
+
+    /**
+     * Adiciona um item na lista de compras via AJAX
+     */
+    public function addListItemAjax() {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $listId = isset($input['list_id']) ? (int)$input['list_id'] : 0;
+        $productId = isset($input['product_id']) ? (int)$input['product_id'] : 0;
+        $quantity = isset($input['quantity']) ? floatval($input['quantity']) : 1.0;
+        $observation = isset($input['observation']) ? trim($input['observation']) : '';
+
+        if ($listId <= 0 || $productId <= 0 || $quantity <= 0) {
+            $this->json(['success' => false, 'error' => 'Dados inválidos.'], 400);
+        }
+
+        $this->listRepo->addItem($listId, $productId, $quantity, $observation);
+        $opt = $this->optimizationService->optimizeList($listId);
+        
+        $this->json(['success' => true, 'optimization' => $opt]);
+    }
+
+    /**
+     * Remove um item da lista de compras via AJAX
+     */
+    public function removeListItemAjax() {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $listId = isset($input['list_id']) ? (int)$input['list_id'] : 0;
+        $productId = isset($input['product_id']) ? (int)$input['product_id'] : 0;
+
+        if ($listId <= 0 || $productId <= 0) {
+            $this->json(['success' => false, 'error' => 'Dados inválidos.'], 400);
+        }
+
+        $this->listRepo->removeItem($listId, $productId);
+        $opt = $this->optimizationService->optimizeList($listId);
+        
+        $this->json(['success' => true, 'optimization' => $opt]);
+    }
+
+    /**
+     * Atualiza a quantidade absoluta de um item via AJAX
+     */
+    public function updateListItemQuantityAjax() {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $listId = isset($input['list_id']) ? (int)$input['list_id'] : 0;
+        $productId = isset($input['product_id']) ? (int)$input['product_id'] : 0;
+        $quantity = isset($input['quantity']) ? floatval($input['quantity']) : 1.0;
+
+        if ($listId <= 0 || $productId <= 0 || $quantity <= 0) {
+            $this->json(['success' => false, 'error' => 'Dados inválidos.'], 400);
+        }
+
+        $this->listRepo->updateItemQuantity($listId, $productId, $quantity);
+        $opt = $this->optimizationService->optimizeList($listId);
+        
+        $this->json(['success' => true, 'optimization' => $opt]);
     }
 }

@@ -77,6 +77,10 @@ $routes = [
     'api/price-history' => ['App\Controllers\ApiController', 'priceHistory'],
     'api/process-ocr' => ['App\Controllers\ApiController', 'processOcrText'],
     'api/upload-xml' => ['App\Controllers\ApiController', 'uploadXml'],
+    'api/lists/items' => ['App\Controllers\ApiController', 'getListItemsAjax'],
+    'api/lists/add-item' => ['App\Controllers\ApiController', 'addListItemAjax'],
+    'api/lists/remove-item' => ['App\Controllers\ApiController', 'removeListItemAjax'],
+    'api/lists/update-quantity' => ['App\Controllers\ApiController', 'updateListItemQuantityAjax'],
 ];
 
 // Despacha para o Controller correspondente

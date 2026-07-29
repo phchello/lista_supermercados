@@ -108,6 +108,11 @@ class ShoppingListRepository {
         return $stmt->execute([$listId, $productId]);
     }
 
+    public function updateItemQuantity($listId, $productId, $quantity) {
+        $stmt = $this->db->prepare("UPDATE shopping_list_items SET quantity = ? WHERE list_id = ? AND product_id = ?");
+        return $stmt->execute([$quantity, $listId, $productId]);
+    }
+
     public function savePurchase($shoppingListId, $purchaseDate, $totalValue, $marketId, $savings, $itemsJson) {
         $stmt = $this->db->prepare("
             INSERT INTO purchase_history (shopping_list_id, purchase_date, total_value, market_id, savings, items_json)
