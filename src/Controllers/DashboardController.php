@@ -34,6 +34,8 @@ class DashboardController extends BaseController {
         $bestDays = $this->priceRepo->getBestDayToShop();
         $priceOscillation = $this->priceRepo->getPriceOscillation();
 
+        $successMessage = $_GET['success'] ?? null;
+
         $this->render('dashboard', [
             'title' => 'Dashboard de Preços',
             'stats' => $stats,
@@ -41,7 +43,16 @@ class DashboardController extends BaseController {
             'recentUpdates' => $recentUpdates,
             'markets' => $markets,
             'bestDays' => $bestDays,
-            'priceOscillation' => $priceOscillation
+            'priceOscillation' => $priceOscillation,
+            'success' => $successMessage
         ]);
+    }
+
+    public function sync() {
+        $scraper = new ScraperService();
+        $stats = $scraper->collectAll();
+        
+        $msg = "Coleta concluída! Preços atualizados em " . $stats['markets_processed'] . " mercados ativos. " . $stats['prices_updated'] . " registros gravados.";
+        $this->redirect('dashboard&success=' . urlencode($msg));
     }
 }

@@ -52,6 +52,7 @@ if (empty($route)) {
 // Mapeamento de Rotas para Controllers
 $routes = [
     'dashboard' => ['App\Controllers\DashboardController', 'index'],
+    'dashboard/sync' => ['App\Controllers\DashboardController', 'sync'],
     'products' => ['App\Controllers\ProductController', 'index'],
     'products/detail' => ['App\Controllers\ProductController', 'detail'],
     'products/save' => ['App\Controllers\ProductController', 'save'],

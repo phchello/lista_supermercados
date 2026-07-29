@@ -1,3 +1,15 @@
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between mb-4 gap-3">
+    <div>
+        <h3 class="fw-bold mb-1">Dashboard de Preços</h3>
+        <p class="text-muted mb-0">Acompanhe a oscilação de valores, promoções e a economia gerada.</p>
+    </div>
+    <div>
+        <a href="?route=dashboard/sync" class="btn btn-primary btn-modern d-flex align-items-center gap-2" id="syncPricesBtn">
+            <i class="bi bi-arrow-clockwise"></i> Sincronizar Preços Agora
+        </a>
+    </div>
+</div>
+
 <div class="row g-4 mb-4">
     <!-- Card: Total Produtos -->
     <div class="col-md-3">

@@ -317,4 +317,15 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         });
     }
+
+    // -------------------------------------------------------------
+    // 6. Botão de Sincronização Manual (Animação de Loading)
+    // -------------------------------------------------------------
+    const syncPricesBtn = document.getElementById('syncPricesBtn');
+    if (syncPricesBtn) {
+        syncPricesBtn.addEventListener('click', function () {
+            this.classList.add('disabled');
+            this.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Sincronizando...`;
+        });
+    }
 });
