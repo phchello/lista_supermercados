@@ -125,8 +125,11 @@ class ScraperService {
             return rand(180, 260) / 100; // R$ 1.80 - R$ 2.60
         } elseif (strpos($name, 'coca') !== false) {
             return rand(800, 1100) / 100; // R$ 8.00 - R$ 11.00
-        } elseif (strpos($name, 'alcatra') !== false || strpos($name, 'carne') !== false) {
-            return rand(3500, 5500) / 100; // R$ 35.00 - R$ 55.00
+        } elseif (strpos($name, 'acem') !== false || strpos($name, 'bovina') !== false || strpos($name, 'carne') !== false || strpos($name, 'alcatra') !== false || strpos($name, 'contra') !== false || strpos($name, 'bovino') !== false) {
+            if (strpos($name, 'picanha') !== false || strpos($name, 'mignon') !== false || strpos($name, 'contra') !== false || strpos($name, 'alcatra') !== false) {
+                return rand(4500, 8500) / 100; // R$ 45.00 - R$ 85.00
+            }
+            return rand(2800, 4800) / 100; // R$ 28.00 - R$ 48.00 (Ex: Acém, Coxão, Patinho)
         }
         return rand(500, 2500) / 100; // R$ 5.00 - R$ 25.00 padrão
     }

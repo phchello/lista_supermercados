@@ -44,6 +44,13 @@ class ProductController extends BaseController {
         $latestPrices = $this->productRepo->getLatestPricesForProduct($id);
         $priceHistory = $this->productRepo->getPriceHistory($id);
 
+        // Enriquece cada preço com a URL de pesquisa dinâmica do mercado
+        $marketRepo = new \App\Repositories\MarketRepository();
+        foreach ($latestPrices as &$lp) {
+            $lp['search_url'] = $marketRepo->getSearchUrl($lp['market_id'], $product['name']);
+        }
+        unset($lp);
+
         $this->render('product_details', [
             'title' => 'Histórico de ' . $product['name'],
             'product' => $product,

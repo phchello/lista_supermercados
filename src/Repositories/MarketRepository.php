@@ -88,4 +88,42 @@ class MarketRepository {
         ";
         return $this->db->query($sql)->fetchAll();
     }
+
+    public function getSearchUrl($marketId, $productName) {
+        $stmt = $this->db->prepare("SELECT name FROM markets WHERE id = ?");
+        $stmt->execute([$marketId]);
+        $market = $stmt->fetch();
+        if (!$market) return "https://www.google.com/search?q=" . urlencode($productName);
+
+        $name = mb_strtolower($market['name'], 'UTF-8');
+        $q = urlencode($productName);
+
+        if (strpos($name, 'ayumi') !== false) {
+            return "https://ayumi.com.br/loja/search/product?q=" . $q;
+        } elseif (strpos($name, 'atacadao') !== false) {
+            return "https://www.atacadao.com.br/busca?q=" . $q;
+        } elseif (strpos($name, 'tenda') !== false) {
+            return "https://www.tendaatacado.com.br/pesquisa?termo=" . $q;
+        } elseif (strpos($name, 'assai') !== false) {
+            return "https://www.assai.com.br/busca?q=" . $q;
+        } elseif (strpos($name, 'sonda') !== false) {
+            return "https://www.sondadelivery.com.br/sonda/busca?q=" . $q;
+        } elseif (strpos($name, 'pao de acucar') !== false) {
+            return "https://www.paodeacucar.com/busca?termo=" . $q;
+        } elseif (strpos($name, 'carrefour') !== false) {
+            return "https://www.carrefour.com.br/busca?termo=" . $q;
+        } elseif (strpos($name, 'extra') !== false) {
+            return "https://www.clubeextra.com.br/busca?termo=" . $q;
+        } elseif (strpos($name, 'dia') !== false) {
+            return "https://www.dia.com.br/busca?q=" . $q;
+        } elseif (strpos($name, 'roldao') !== false) {
+            return "https://roldao.com.br/?s=" . $q;
+        } elseif (strpos($name, 'spani') !== false) {
+            return "https://spani.com.br/?s=" . $q;
+        } elseif (strpos($name, 'cercadao') !== false) {
+            return "https://cercadao.com.br/?s=" . $q;
+        }
+        
+        return "https://www.google.com/search?q=" . urlencode($market['name'] . ' ' . $productName);
+    }
 }

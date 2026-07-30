@@ -69,17 +69,22 @@ $variation = ($minPrice && $maxPrice && $minPrice > 0) ? (($maxPrice - $minPrice
                                 </small>
                             </div>
                         </div>
-                        <div class="text-end">
-                            <?php if ($lp['price'] !== null): ?>
-                                <span class="fs-5 fw-bold <?= $lp['price'] == $minPrice ? 'text-success' : 'text-main' ?>">
-                                    R$ <?= number_format($lp['price'], 2, ',', '.') ?>
-                                </span>
-                                <?php if ($lp['is_promotion']): ?>
-                                    <div class="badge bg-danger small d-block">PROMOÇÃO (-<?= round($lp['discount_percentage']) ?>%)</div>
+                        <div class="text-end d-flex align-items-center gap-3">
+                            <div>
+                                <?php if ($lp['price'] !== null): ?>
+                                    <span class="fs-5 fw-bold <?= $lp['price'] == $minPrice ? 'text-success' : 'text-main' ?>">
+                                        R$ <?= number_format($lp['price'], 2, ',', '.') ?>
+                                    </span>
+                                    <?php if ($lp['is_promotion']): ?>
+                                        <div class="badge bg-danger small d-block">PROMOÇÃO (-<?= round($lp['discount_percentage']) ?>%)</div>
+                                    <?php endif; ?>
+                                <?php else: ?>
+                                    <span class="text-muted small">Sem preço</span>
                                 <?php endif; ?>
-                            <?php else: ?>
-                                <span class="text-muted small">Sem preço</span>
-                            <?php endif; ?>
+                            </div>
+                            <a href="<?= htmlspecialchars($lp['search_url']) ?>" target="_blank" class="btn btn-sm btn-outline-primary btn-modern" title="Ver produto no site do mercado">
+                                <i class="bi bi-box-arrow-up-right"></i>
+                            </a>
                         </div>
                     </div>
                 <?php endforeach; ?>
